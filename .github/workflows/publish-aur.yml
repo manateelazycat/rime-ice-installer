@@ -19,7 +19,7 @@ jobs:
 
       - name: Update PKGBUILD version
         run: |
-          sed -i "s/^pkgver=.*/pkgver=$/" PKGBUILD
+          sed -i "s/^pkgver=.*/pkgver=${{ steps.version.outputs.version }}/" PKGBUILD
           sed -i "s/^pkgrel=.*/pkgrel=1/" PKGBUILD
 
       - name: Publish AUR package
@@ -28,8 +28,8 @@ jobs:
           pkgname: rime-ice-installer
           pkgbuild: ./PKGBUILD
           updpkgsums: true
-          commit_username: $
-          commit_email: $
-          ssh_private_key: $
-          commit_message: "Update to version $"
+          commit_username: ${{ secrets.AUR_USERNAME }}
+          commit_email: ${{ secrets.AUR_EMAIL }}
+          ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          commit_message: "Update to version ${{ steps.version.outputs.version }}"
           ssh_keyscan_types: rsa,ecdsa,ed25519
