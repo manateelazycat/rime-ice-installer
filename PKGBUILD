@@ -12,11 +12,16 @@ makedepends=('go')
 source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
 sha256sums=('5596e38df1a29366a291c26c5aa437660ad336758572a1081cce9040b23eea7a')
 
+_setup_go_env() {
+  export GOPATH="$srcdir"
+  export GOMODCACHE="$srcdir/pkg/mod"
+  export GOFLAGS='-buildmode=pie -trimpath -mod=readonly -modcacherw'
+}
+
 prepare() {
   cd "$srcdir/$pkgname-$pkgver"
 
-  export GOPATH="$srcdir"
-  export GOMODCACHE="$srcdir/pkg/mod"
+  _setup_go_env
 
   go mod download
 }
@@ -24,13 +29,11 @@ prepare() {
 build() {
   cd "$srcdir/$pkgname-$pkgver"
 
-  export GOPATH="$srcdir"
-  export GOMODCACHE="$srcdir/pkg/mod"
+  _setup_go_env
   export CGO_CPPFLAGS="${CPPFLAGS}"
   export CGO_CFLAGS="${CFLAGS}"
   export CGO_CXXFLAGS="${CXXFLAGS}"
   export CGO_LDFLAGS="${LDFLAGS}"
-  export GOFLAGS='-buildmode=pie -trimpath -mod=readonly -modcacherw'
 
   go build -o "$pkgname" .
 }
@@ -38,8 +41,7 @@ build() {
 check() {
   cd "$srcdir/$pkgname-$pkgver"
 
-  export GOPATH="$srcdir"
-  export GOMODCACHE="$srcdir/pkg/mod"
+  _setup_go_env
 
   go test ./...
 }
