@@ -1,0 +1,35 @@
+name: Publish to AUR
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  publish-aur:
+    name: Publish to AUR
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Extract version
+        id: version
+        run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Update PKGBUILD version
+        run: |
+          sed -i "s/^pkgver=.*/pkgver=$/" PKGBUILD
+          sed -i "s/^pkgrel=.*/pkgrel=1/" PKGBUILD
+
+      - name: Publish AUR package
+        uses: KSXGitHub/github-actions-deploy-aur@v4.1.1
+        with:
+          pkgname: rime-ice-installer
+          pkgbuild: ./PKGBUILD
+          updpkgsums: true
+          commit_username: $
+          commit_email: $
+          ssh_private_key: $
+          commit_message: "Update to version $"
+          ssh_keyscan_types: rsa,ecdsa,ed25519
