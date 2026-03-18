@@ -29,7 +29,7 @@ func NewDialog() *Dialog {
 }
 
 func (d *Dialog) CollectOptions(cfg config.InstallConfig, env config.DetectedEnv) (config.InstallConfig, error) {
-	intro := fmt.Sprintf("检测到当前环境:\n\n会话类型: %s\n桌面环境: %s\nKDE Plasma: %t\n默认主题: default-dark\n\n接下来选择要安装的组件。",
+	intro := fmt.Sprintf("检测到当前环境:\n\n会话类型: %s\n桌面环境: %s\nKDE Plasma: %t\n将应用主题: installer-dark（黑色科幻）\n\n接下来选择要安装的组件。",
 		blankIfUnknown(env.SessionType),
 		blankIfUnknown(env.Desktop),
 		env.IsKDE,

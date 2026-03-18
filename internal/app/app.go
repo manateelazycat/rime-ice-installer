@@ -251,7 +251,7 @@ func buildSummary(cfg config.InstallConfig, env config.DetectedEnv) string {
 		"将要执行以下操作：",
 		"",
 		"1. 安装 Fcitx5、GTK/Qt 模块、配置工具、Rime、librime 和 opencc",
-		"2. 写入并同步 Fcitx5 主题与快捷键清理配置（默认主题为 installer-dark）",
+		"2. 写入并同步 Fcitx5 黑色科幻主题与快捷键清理配置（默认主题为 installer-dark）",
 		fmt.Sprintf("3. 写入 IM 环境变量文件：%s", env.EnvironmentFilePath),
 		"4. 下载 rime-ice nightly 并修改 default.yaml",
 		"5. 备份并覆盖以下目录：",

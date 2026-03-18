@@ -4,7 +4,7 @@
 
 - Fcitx5
 - Fcitx5 Rime
-- Fcitx5 自定义深灰主题 `installer-dark`
+- Fcitx5 自定义黑色科幻主题 `installer-dark`
 - 雾凇拼音 `rime-ice`
 - 万象 LTS 语法模型
 
@@ -13,7 +13,7 @@
 - 基于 `dialog` 的终端交互界面
 - 安装过程中显示步骤进度条
 - 自动检测 KDE Wayland / 通用 X11
-- 自动写入 Fcitx5 `installer-dark` 主题和快捷键清理配置
+- 自动写入 Fcitx5 `installer-dark` 黑色科幻主题和快捷键清理配置
 - 自动把 `~/.config/fcitx/rime` 和 `~/.local/share/fcitx5/rime` 备份为同级 `_bak`
 - 自动下载 `rime-ice` nightly 和 `wanxiang-lts-zh-hans.gram`
 - 安装后自动编译并激活 `rime_ice` 方案
@@ -89,7 +89,7 @@ rime-ice-installer
 
 说明：
 
-- 默认主题改为自定义的 `installer-dark`，它基于 Fcitx5 自带 `default-dark` 生成，但移除了 `AccentColorField`，这样 KDE 的紫色强调色不会再污染候选框。
+- 默认主题改为自定义的 `installer-dark`，它会覆盖 Fcitx5 的基础深色主题资源，写入黑色科幻风格的 `theme.conf` 和图标，并继续禁用 `AccentColorField`，避免 KDE 的强调色污染候选框。
 - 当前 Arch 仓库里的 `librime` 已包含 `librime-octagram.so`，因此没有额外安装单独的 `librime-plugin-octagram` 包。
 - `fcitx5-im` 在 Arch 中是包组，不是独立包名，因此安装器直接安装实际需要的包。
 - 安装器会显式安装 `opencc`，避免 `librime` 与旧版 OpenCC 的 soname 不匹配，导致“中州韵输入法不可用”。

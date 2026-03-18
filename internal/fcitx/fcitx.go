@@ -319,46 +319,12 @@ func ensureCustomTheme(home string) error {
 		return fmt.Errorf("清理旧主题失败: %w", err)
 	}
 	if err := system.CopyDir(sourceDir, targetDir); err != nil {
-		return fmt.Errorf("复制默认主题失败: %w", err)
+		return fmt.Errorf("复制基础主题失败: %w", err)
 	}
-
-	themeConfPath := filepath.Join(targetDir, "theme.conf")
-	content, err := os.ReadFile(themeConfPath)
-	if err != nil {
-		return fmt.Errorf("读取主题配置失败: %w", err)
-	}
-
-	updated := removeAccentColorField(string(content))
-	if updated == string(content) {
-		return fmt.Errorf("未能从主题配置中移除 AccentColorField，默认主题结构可能已变化")
-	}
-	if err := system.WriteFileAtomic(themeConfPath, []byte(updated), 0o644); err != nil {
-		return fmt.Errorf("写入自定义主题配置失败: %w", err)
+	if err := writeCustomThemeAssets(targetDir); err != nil {
+		return fmt.Errorf("写入自定义主题资源失败: %w", err)
 	}
 	return nil
-}
-
-func removeAccentColorField(content string) string {
-	lines := strings.Split(content, "\n")
-	out := make([]string, 0, len(lines))
-	skipping := false
-
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "[AccentColorField]" {
-			skipping = true
-			continue
-		}
-		if skipping && strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]") {
-			skipping = false
-		}
-		if skipping {
-			continue
-		}
-		out = append(out, line)
-	}
-
-	return strings.TrimRight(strings.Join(out, "\n"), "\n") + "\n"
 }
 
 func classicUIRuntimeConfig() string {
