@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"gopkg.in/ini.v1"
+
 	"rime-ice-installer/internal/system"
 )
 
@@ -147,5 +149,89 @@ func TestWriteCustomThemeAssets(t *testing.T) {
 		if cfg.Width != size[0] || cfg.Height != size[1] {
 			t.Fatalf("%s size mismatch: got %dx%d want %dx%d", name, cfg.Width, cfg.Height, size[0], size[1])
 		}
+	}
+}
+
+func TestEnsureProfileCreatesKeyboardUSAndRime(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "profile")
+
+	if err := ensureProfile(path); err != nil {
+		t.Fatalf("ensureProfile failed: %v", err)
+	}
+
+	cfg, err := ini.Load(path)
+	if err != nil {
+		t.Fatalf("load profile: %v", err)
+	}
+
+	group := cfg.Section("Groups/0")
+	if got := group.Key("Default Layout").String(); got != "us" {
+		t.Fatalf("expected Default Layout us, got %q", got)
+	}
+	if got := group.Key("DefaultIM").String(); got != "rime" {
+		t.Fatalf("expected DefaultIM rime, got %q", got)
+	}
+	if got := cfg.Section("Groups/0/Items/0").Key("Name").String(); got != keyboardUS {
+		t.Fatalf("expected first item %s, got %q", keyboardUS, got)
+	}
+	if got := cfg.Section("Groups/0/Items/1").Key("Name").String(); got != "rime" {
+		t.Fatalf("expected second item rime, got %q", got)
+	}
+}
+
+func TestEnsureProfileAddsKeyboardUSWhenMissing(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "profile")
+	initial := strings.Join([]string{
+		"[Groups/0]",
+		"Name=默认",
+		"DefaultIM=rime",
+		"",
+		"[Groups/0/Items/0]",
+		"Name=keyboard-cn",
+		"Layout=",
+		"",
+		"[Groups/0/Items/1]",
+		"Name=rime",
+		"Layout=",
+		"",
+	}, "\n")
+	if err := os.WriteFile(path, []byte(initial), 0o644); err != nil {
+		t.Fatalf("write profile: %v", err)
+	}
+
+	if err := ensureProfile(path); err != nil {
+		t.Fatalf("ensureProfile failed: %v", err)
+	}
+
+	cfg, err := ini.Load(path)
+	if err != nil {
+		t.Fatalf("load profile: %v", err)
+	}
+
+	group := cfg.Section("Groups/0")
+	if got := group.Key("Default Layout").String(); got != "us" {
+		t.Fatalf("expected Default Layout us, got %q", got)
+	}
+
+	foundKeyboardUS := false
+	foundRime := false
+	for _, section := range cfg.Sections() {
+		if !strings.HasPrefix(section.Name(), "Groups/0/Items/") {
+			continue
+		}
+		switch section.Key("Name").String() {
+		case keyboardUS:
+			foundKeyboardUS = true
+		case "rime":
+			foundRime = true
+		}
+	}
+	if !foundKeyboardUS {
+		t.Fatalf("expected profile to include %s", keyboardUS)
+	}
+	if !foundRime {
+		t.Fatalf("expected profile to include rime")
 	}
 }

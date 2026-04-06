@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -48,7 +47,7 @@ func PrepareWorkspace(ctx context.Context, client *download.Client, workspace st
 		return nil, err
 	}
 
-	if err := PatchDefaultYAML(filepath.Join(sourceDir, "default.yaml")); err != nil {
+	if err := MergeDefaultCustomConfig(filepath.Join(sourceDir, "default.custom.yaml")); err != nil {
 		return nil, err
 	}
 	if err := EnsureActiveSchema(filepath.Join(sourceDir, "user.yaml")); err != nil {
@@ -68,28 +67,49 @@ func PrepareWorkspace(ctx context.Context, client *download.Client, workspace st
 	}, nil
 }
 
-func PatchDefaultYAML(path string) error {
-	content, err := os.ReadFile(path)
+func MergeDefaultCustomConfig(path string) error {
+	root := map[string]any{}
+	if content, err := os.ReadFile(path); err == nil {
+		if len(strings.TrimSpace(string(content))) > 0 {
+			if err := yaml.Unmarshal(content, &root); err != nil {
+				return fmt.Errorf("解析现有 default.custom.yaml 失败: %w", err)
+			}
+		}
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("读取 default.custom.yaml 失败: %w", err)
+	}
+
+	patch, ok := root["patch"].(map[string]any)
+	if !ok || patch == nil {
+		patch = map[string]any{}
+	}
+
+	patch["menu/page_size"] = 9
+	patch["ascii_composer/good_old_caps_lock"] = true
+	patch["ascii_composer/switch_key/Shift_L"] = "inline_ascii"
+	patch["ascii_composer/switch_key/Shift_R"] = "noop"
+	patch["ascii_composer/switch_key/Control_L"] = "noop"
+	patch["ascii_composer/switch_key/Control_R"] = "noop"
+	patch["key_binder/bindings/+"] = []any{
+		map[string]any{
+			"when":   "has_menu",
+			"accept": "comma",
+			"send":   "Page_Up",
+		},
+		map[string]any{
+			"when":   "has_menu",
+			"accept": "period",
+			"send":   "Page_Down",
+		},
+	}
+
+	root["patch"] = patch
+	out, err := yaml.Marshal(root)
 	if err != nil {
-		return fmt.Errorf("读取 default.yaml 失败: %w", err)
+		return fmt.Errorf("序列化 default.custom.yaml 失败: %w", err)
 	}
 
-	updated := string(content)
-	updated = strings.Replace(updated, "page_size: 5", "page_size: 9", 1)
-
-	pageUpRe := regexp.MustCompile(`(?m)^(\s*)#\s*(- \{ when: (?:paging|has_menu), accept: comma, send: Page_Up \})\s*$`)
-	pageDownRe := regexp.MustCompile(`(?m)^(\s*)#\s*(- \{ when: (?:paging|has_menu), accept: period, send: Page_Down \})\s*$`)
-	updated = pageUpRe.ReplaceAllString(updated, "$1$2")
-	updated = pageDownRe.ReplaceAllString(updated, "$1$2")
-
-	if updated == string(content) {
-		return fmt.Errorf("default.yaml 未发生任何预期修改，可能上游格式已变化")
-	}
-
-	if err := system.WriteFileAtomic(path, []byte(updated), 0o644); err != nil {
-		return err
-	}
-	return nil
+	return system.WriteFileAtomic(path, out, 0o644)
 }
 
 func Deploy(sourceDir string, targets []string) (*config.DeploymentResult, error) {

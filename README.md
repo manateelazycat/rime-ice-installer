@@ -14,8 +14,10 @@
 - 安装过程中显示步骤进度条
 - 自动检测 KDE Wayland / 通用 X11
 - 自动写入 Fcitx5 `installer-dark` 黑色科幻主题和快捷键清理配置
+- 自动确保 Fcitx5 `profile` 同时包含 `rime` 和 `keyboard-us`
 - 自动把 `~/.config/fcitx/rime` 和 `~/.local/share/fcitx5/rime` 备份为同级 `_bak`
 - 自动下载 `rime-ice` nightly 和 `wanxiang-lts-zh-hans.gram`
+- 自动写入 `default.custom.yaml`，启用 9 候选、`,` `.` 翻页，并把左 `Shift` 改成临时英文
 - 安装后自动编译并激活 `rime_ice` 方案
 
 ## 构建与安装
@@ -93,6 +95,7 @@ rime-ice-installer
 - 当前 Arch 仓库里的 `librime` 已包含 `librime-octagram.so`，因此没有额外安装单独的 `librime-plugin-octagram` 包。
 - `fcitx5-im` 在 Arch 中是包组，不是独立包名，因此安装器直接安装实际需要的包。
 - 安装器会显式安装 `opencc`，避免 `librime` 与旧版 OpenCC 的 soname 不匹配，导致“中州韵输入法不可用”。
+- 安装器不再直接修改上游 `default.yaml`，而是写入 `default.custom.yaml` 覆盖默认补丁，降低上游格式变化导致失效的风险。
 
 ## 会修改的 Fcitx5 配置
 
@@ -109,6 +112,11 @@ rime-ice-installer
 - `quickphrase.TriggerKey`
 - `unicode.TriggerKey`
 
+同时会确保 `~/.config/fcitx5/profile` 里存在：
+
+- `rime`
+- `keyboard-us`
+
 ## Rime 部署目录
 
 - `~/.config/fcitx/rime`
@@ -118,3 +126,13 @@ rime-ice-installer
 
 - `~/.config/fcitx/rime_bak`
 - `~/.local/share/fcitx5/rime_bak`
+
+部署的雾凇配置会额外写入：
+
+- `default.custom.yaml`
+
+其中默认补丁包括：
+
+- `menu/page_size: 9`
+- 追加 `,` / `.` 翻页
+- `ascii_composer/switch_key/Shift_L: inline_ascii`

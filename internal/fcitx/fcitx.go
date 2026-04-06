@@ -31,6 +31,7 @@ const (
 	managedBlockEnd   = "# <<< rime-ice-installer ime end <<<"
 	customThemeName   = "installer-dark"
 	systemThemeName   = "default-dark"
+	keyboardUS        = "keyboard-us"
 )
 
 func InstallPackages(ctx context.Context, runner *system.Runner, cfg config.InstallConfig, env config.DetectedEnv) error {
@@ -230,13 +231,14 @@ func ensureProfile(path string) error {
 	group := cfg.Section("Groups/0")
 	group.Key("Name").SetValue("默认")
 	if group.Key("Default Layout").String() == "" {
-		group.Key("Default Layout").SetValue("cn")
+		group.Key("Default Layout").SetValue("us")
 	}
 	group.Key("DefaultIM").SetValue("rime")
 
 	itemPattern := regexp.MustCompile(`^Groups/0/Items/(\d+)$`)
 	maxIndex := -1
 	hasAnyItem := false
+	keyboardUSFound := false
 	rimeFound := false
 
 	for _, section := range cfg.Sections() {
@@ -250,7 +252,13 @@ func ensureProfile(path string) error {
 		if index > maxIndex {
 			maxIndex = index
 		}
-		if section.Key("Name").String() == "rime" {
+		switch section.Key("Name").String() {
+		case keyboardUS:
+			keyboardUSFound = true
+			if section.Key("Layout").String() == "" {
+				section.Key("Layout").SetValue("")
+			}
+		case "rime":
 			rimeFound = true
 			if section.Key("Layout").String() == "" {
 				section.Key("Layout").SetValue("")
@@ -260,9 +268,17 @@ func ensureProfile(path string) error {
 
 	if !hasAnyItem {
 		keyboardSection := cfg.Section("Groups/0/Items/0")
-		keyboardSection.Key("Name").SetValue("keyboard-cn")
+		keyboardSection.Key("Name").SetValue(keyboardUS)
 		keyboardSection.Key("Layout").SetValue("")
 		maxIndex = 0
+		keyboardUSFound = true
+	}
+
+	if !keyboardUSFound {
+		keyboardSection := cfg.Section(fmt.Sprintf("Groups/0/Items/%d", maxIndex+1))
+		keyboardSection.Key("Name").SetValue(keyboardUS)
+		keyboardSection.Key("Layout").SetValue("")
+		maxIndex++
 	}
 
 	if !rimeFound {

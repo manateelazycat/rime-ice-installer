@@ -3,44 +3,79 @@ package rime
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
-func TestPatchDefaultYAML(t *testing.T) {
+func TestMergeDefaultCustomConfig(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "default.yaml")
-	content := strings.Join([]string{
-		"menu:",
-		"  page_size: 5",
-		"key_binder:",
-		"  bindings:",
-		"    # - { when: has_menu, accept: comma, send: Page_Up }",
-		"    # - { when: has_menu, accept: period, send: Page_Down }",
-		"",
-	}, "\n")
-
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		t.Fatalf("write test file: %v", err)
+	path := filepath.Join(dir, "default.custom.yaml")
+	initial := "patch:\n  switcher/hotkeys:\n    - F4\n"
+	if err := os.WriteFile(path, []byte(initial), 0o644); err != nil {
+		t.Fatalf("write initial custom yaml: %v", err)
 	}
 
-	if err := PatchDefaultYAML(path); err != nil {
-		t.Fatalf("patch default yaml: %v", err)
+	if err := MergeDefaultCustomConfig(path); err != nil {
+		t.Fatalf("merge default custom yaml: %v", err)
 	}
 
 	updated, err := os.ReadFile(path)
 	if err != nil {
-		t.Fatalf("read updated yaml: %v", err)
+		t.Fatalf("read merged yaml: %v", err)
 	}
-	text := string(updated)
-	if !strings.Contains(text, "page_size: 9") {
-		t.Fatalf("expected page_size to be updated, got: %s", text)
+
+	root := map[string]any{}
+	if err := yaml.Unmarshal(updated, &root); err != nil {
+		t.Fatalf("unmarshal merged yaml: %v", err)
 	}
-	if strings.Contains(text, "# - { when: has_menu, accept: comma, send: Page_Up }") {
-		t.Fatalf("expected comma page up binding to be uncommented, got: %s", text)
+
+	patch, ok := root["patch"].(map[string]any)
+	if !ok || patch == nil {
+		t.Fatalf("expected patch section, got: %#v", root["patch"])
 	}
-	if strings.Contains(text, "# - { when: has_menu, accept: period, send: Page_Down }") {
-		t.Fatalf("expected period page down binding to be uncommented, got: %s", text)
+
+	if got := patch["menu/page_size"]; got != 9 {
+		t.Fatalf("expected menu/page_size=9, got %#v", got)
+	}
+	if got := patch["ascii_composer/good_old_caps_lock"]; got != true {
+		t.Fatalf("expected good_old_caps_lock=true, got %#v", got)
+	}
+	if got := patch["ascii_composer/switch_key/Shift_L"]; got != "inline_ascii" {
+		t.Fatalf("expected Shift_L=inline_ascii, got %#v", got)
+	}
+	if got := patch["ascii_composer/switch_key/Shift_R"]; got != "noop" {
+		t.Fatalf("expected Shift_R=noop, got %#v", got)
+	}
+	if got := patch["ascii_composer/switch_key/Control_L"]; got != "noop" {
+		t.Fatalf("expected Control_L=noop, got %#v", got)
+	}
+	if got := patch["ascii_composer/switch_key/Control_R"]; got != "noop" {
+		t.Fatalf("expected Control_R=noop, got %#v", got)
+	}
+	if _, ok := patch["switcher/hotkeys"]; !ok {
+		t.Fatalf("expected existing patch entries to be preserved, got %#v", patch)
+	}
+
+	bindings, ok := patch["key_binder/bindings/+"].([]any)
+	if !ok || len(bindings) != 2 {
+		t.Fatalf("expected two appended bindings, got %#v", patch["key_binder/bindings/+"])
+	}
+
+	first, ok := bindings[0].(map[string]any)
+	if !ok {
+		t.Fatalf("expected first binding map, got %#v", bindings[0])
+	}
+	if first["when"] != "has_menu" || first["accept"] != "comma" || first["send"] != "Page_Up" {
+		t.Fatalf("unexpected first binding: %#v", first)
+	}
+
+	second, ok := bindings[1].(map[string]any)
+	if !ok {
+		t.Fatalf("expected second binding map, got %#v", bindings[1])
+	}
+	if second["when"] != "has_menu" || second["accept"] != "period" || second["send"] != "Page_Down" {
+		t.Fatalf("unexpected second binding: %#v", second)
 	}
 }
 
@@ -60,11 +95,19 @@ func TestEnsureActiveSchema(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read user.yaml: %v", err)
 	}
-	text := string(updated)
-	if !strings.Contains(text, "previously_selected_schema: rime_ice") {
-		t.Fatalf("expected active schema to be rime_ice, got: %s", text)
+
+	root := map[string]any{}
+	if err := yaml.Unmarshal(updated, &root); err != nil {
+		t.Fatalf("unmarshal user.yaml: %v", err)
 	}
-	if !strings.Contains(text, "last_build_time: 1") {
-		t.Fatalf("expected existing fields to be preserved, got: %s", text)
+	varSection, ok := root["var"].(map[string]any)
+	if !ok || varSection == nil {
+		t.Fatalf("expected var section, got %#v", root["var"])
+	}
+	if got := varSection["previously_selected_schema"]; got != "rime_ice" {
+		t.Fatalf("expected active schema to be rime_ice, got: %#v", got)
+	}
+	if got := varSection["last_build_time"]; got != 1 {
+		t.Fatalf("expected existing fields to be preserved, got: %#v", got)
 	}
 }
