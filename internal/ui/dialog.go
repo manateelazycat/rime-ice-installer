@@ -50,7 +50,31 @@ func (d *Dialog) CollectOptions(cfg config.InstallConfig, env config.DetectedEnv
 		selected[choice] = true
 	}
 	cfg.EnableWanxiang = selected["wanxiang"]
+
+	fontSize, err := d.rangeBox(
+		"候选框字号",
+		"调节 Fcitx5 输入法候选框的字体大小：",
+		config.MinFontSize,
+		config.MaxFontSize,
+		cfg.FontSize,
+	)
+	if err != nil {
+		return cfg, err
+	}
+	cfg.FontSize = fontSize
 	return cfg, nil
+}
+
+const (
+	SudoAuthPassword    = "password"
+	SudoAuthFingerprint = "fingerprint"
+)
+
+func (d *Dialog) ChooseSudoAuth() (string, error) {
+	return d.menu("sudo 身份验证", "选择验证方式：", []menuItem{
+		{Tag: SudoAuthFingerprint, Label: "使用已录入的指纹"},
+		{Tag: SudoAuthPassword, Label: "输入 sudo 密码"},
+	})
 }
 
 func (d *Dialog) ConfirmPlan(summary string) (bool, error) {
@@ -119,6 +143,58 @@ type checklistItem struct {
 	Tag     string
 	Label   string
 	Checked bool
+}
+
+type menuItem struct {
+	Tag   string
+	Label string
+}
+
+func (d *Dialog) menu(title, text string, items []menuItem) (string, error) {
+	args := []string{"--clear", "--stdout", "--backtitle", d.Backtitle, "--title", title, "--menu", text, "14", "72", "6"}
+	for _, item := range items {
+		args = append(args, item.Tag, item.Label)
+	}
+
+	cmd := exec.Command("dialog", args...)
+	cmd.Stdin = os.Stdin
+	cmd.Stderr = os.Stderr
+	defer RestoreTerminal()
+	var stdout bytes.Buffer
+	cmd.Stdout = &stdout
+	if err := cmd.Run(); err != nil {
+		if isDialogCancelled(err) {
+			return "", ErrCancelled
+		}
+		return "", err
+	}
+	return strings.TrimSpace(stdout.String()), nil
+}
+
+func (d *Dialog) rangeBox(title, text string, minimum, maximum, current int) (int, error) {
+	args := []string{
+		"--clear", "--stdout", "--backtitle", d.Backtitle, "--title", title,
+		"--rangebox", text, "10", "88",
+		fmt.Sprintf("%d", minimum), fmt.Sprintf("%d", maximum), fmt.Sprintf("%d", current),
+	}
+	cmd := exec.Command("dialog", args...)
+	cmd.Stdin = os.Stdin
+	cmd.Stderr = os.Stderr
+	defer RestoreTerminal()
+	var stdout bytes.Buffer
+	cmd.Stdout = &stdout
+	if err := cmd.Run(); err != nil {
+		if isDialogCancelled(err) {
+			return 0, ErrCancelled
+		}
+		return 0, err
+	}
+
+	var value int
+	if _, err := fmt.Sscanf(strings.TrimSpace(stdout.String()), "%d", &value); err != nil {
+		return 0, fmt.Errorf("读取字号失败: %w", err)
+	}
+	return value, nil
 }
 
 func (d *Dialog) checklist(title, text string, items []checklistItem) ([]string, error) {

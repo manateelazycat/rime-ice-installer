@@ -14,6 +14,8 @@
 - 安装过程中显示步骤进度条
 - 自动检测 KDE Wayland / 通用 X11
 - 自动写入 Fcitx5 `installer-dark` 黑色科幻主题和快捷键清理配置
+- 可在 TUI 中调节 Fcitx5 候选框字号（8–48，默认 13）
+- 当系统的 sudo PAM 已启用指纹且当前用户已有录入时，可选择指纹验证，并在失败后回退密码
 - 自动确保 Fcitx5 `profile` 同时包含 `rime` 和 `keyboard-us`
 - 自动把 `~/.config/fcitx/rime` 和 `~/.local/share/fcitx5/rime` 备份为同级 `_bak`
 - 自动下载 `rime-ice` nightly 和 `wanxiang-lts-zh-hans.gram`
@@ -69,12 +71,23 @@ rime-ice-installer
 ./rime-ice-installer --yes --dry-run
 ```
 
+## 指纹验证
+
+安装器不会自行录入指纹或改写 PAM。它只在检测到以下条件时显示“使用已录入的指纹”：
+
+- `fprintd` 的系统 D-Bus 接口能找到指纹设备
+- 当前用户已经录入至少一个指纹
+- sudo 的 PAM 认证链包含 `pam_fprintd.so`
+
+选择指纹后，实际认证仍由 `sudo` 经 PAM 完成；安装器不会把一次独立的 `fprintd-verify` 当成提权凭据。指纹失败或超时后会回退到密码输入。本机 Omarchy 可通过 `omarchy setup security fingerprint` 完成指纹录入及 sudo PAM 配置。
+
 可用参数：
 
 - `--yes`
 - `--dry-run`
 - `--verbose`
 - `--enable-wanxiang`
+- `--font-size 13`
 - `--workspace-dir`
 
 ## 实际安装内容

@@ -86,7 +86,7 @@ func Run(ctx context.Context, cfg config.InstallConfig) error {
 
 	if os.Geteuid() != 0 {
 		if dialogUI != nil {
-			if err := validateSudoWithDialog(ctx, runner, dialogUI); err != nil {
+			if err := validateSudoWithDialog(ctx, runner, dialogUI, detectedEnv.FingerprintAvailable); err != nil {
 				if errors.Is(err, ui.ErrCancelled) {
 					return nil
 				}
@@ -164,11 +164,11 @@ func Run(ctx context.Context, cfg config.InstallConfig) error {
 
 	if err := step("写入 Fcitx5 用户配置", func() error {
 		var err error
-		configuredFiles, err = fcitx.Configure(detectedEnv.HomeDir)
+		configuredFiles, err = fcitx.Configure(detectedEnv.HomeDir, cfg.FontSize)
 		if err != nil {
 			return err
 		}
-		return fcitx.SyncRuntimeConfig(ctx, runner)
+		return fcitx.SyncRuntimeConfig(ctx, runner, cfg.FontSize)
 	}); err != nil {
 		closeGauge(gauge)
 		return fail(dialogUI, logger, err)
@@ -212,7 +212,7 @@ func Run(ctx context.Context, cfg config.InstallConfig) error {
 		if err := rime.Build(ctx, runner, userDir); err != nil {
 			return err
 		}
-		return fcitx.ReloadAndActivate(ctx, runner)
+		return fcitx.ReloadAndActivate(ctx, runner, cfg.FontSize)
 	}); err != nil {
 		closeGauge(gauge)
 		return fail(dialogUI, logger, err)
@@ -239,6 +239,9 @@ func Run(ctx context.Context, cfg config.InstallConfig) error {
 }
 
 func validateConfig(cfg config.InstallConfig, detectedEnv config.DetectedEnv) error {
+	if cfg.FontSize < config.MinFontSize || cfg.FontSize > config.MaxFontSize {
+		return fmt.Errorf("候选框字号必须在 %d 到 %d 之间", config.MinFontSize, config.MaxFontSize)
+	}
 	missing := env.MissingCommands(env.RequiredCommands(!cfg.Yes))
 	if len(missing) > 0 {
 		return fmt.Errorf("缺少必要命令: %s", strings.Join(missing, ", "))
@@ -252,6 +255,7 @@ func buildSummary(cfg config.InstallConfig, env config.DetectedEnv) string {
 		"",
 		"1. 安装 Fcitx5、GTK/Qt 模块、配置工具、Rime、librime 和 opencc",
 		"2. 写入并同步 Fcitx5 黑色科幻主题、快捷键清理配置和 keyboard-us 英文键盘项",
+		fmt.Sprintf("   - 候选框字体：Noto Sans Mono %d", cfg.FontSize),
 		fmt.Sprintf("3. 写入 IM 环境变量文件：%s", env.EnvironmentFilePath),
 		"4. 下载 rime-ice nightly，并通过 default.custom.yaml 启用 9 候选、逗号句号翻页和左 Shift 临时英文",
 		"5. 备份并覆盖以下目录：",
@@ -336,11 +340,34 @@ func fail(dialogUI *ui.Dialog, logger *system.Logger, err error) error {
 	return err
 }
 
-func validateSudoWithDialog(ctx context.Context, runner *system.Runner, dialogUI *ui.Dialog) error {
+func validateSudoWithDialog(ctx context.Context, runner *system.Runner, dialogUI *ui.Dialog, fingerprintAvailable bool) error {
+	if runner.ValidateCachedSudo(ctx) {
+		return nil
+	}
+
+	fingerprintFailed := false
+	if fingerprintAvailable {
+		method, err := dialogUI.ChooseSudoAuth()
+		if err != nil {
+			return err
+		}
+		if method == ui.SudoAuthFingerprint {
+			if err := dialogUI.MsgBox("sudo 指纹验证", "选择“确定”后，请触摸指纹传感器。\n\n验证失败后将自动回退到密码。"); err != nil {
+				return err
+			}
+			if err := runner.ValidateSudoFingerprint(ctx); err == nil {
+				return nil
+			}
+			fingerprintFailed = true
+		}
+	}
+
 	for attempt := 1; attempt <= maxSudoAttempts; attempt++ {
 		title := fmt.Sprintf("sudo 验证 (%d/%d)", attempt, maxSudoAttempts)
 		prompt := "请输入 sudo 密码以继续安装："
-		if attempt > 1 {
+		if fingerprintFailed && attempt == 1 {
+			prompt = "指纹验证未完成，请输入 sudo 密码以继续安装："
+		} else if attempt > 1 {
 			prompt = fmt.Sprintf("密码错误，请重新输入 sudo 密码：\n\n剩余尝试次数：%d", maxSudoAttempts-attempt+1)
 		}
 

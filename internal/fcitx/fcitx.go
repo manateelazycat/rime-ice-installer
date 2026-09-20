@@ -94,7 +94,7 @@ func EnsureIMEEnvironment(env config.DetectedEnv) (string, error) {
 	return env.EnvironmentFilePath, nil
 }
 
-func Configure(home string) ([]string, error) {
+func Configure(home string, fontSize int) ([]string, error) {
 	if err := ensureCustomTheme(home); err != nil {
 		return nil, err
 	}
@@ -115,7 +115,7 @@ func Configure(home string) ([]string, error) {
 	if err := writeDefaultSection(paths[0], map[string]string{
 		"Vertical Candidate List": "False",
 		"PerScreenDPI":            "False",
-		"Font":                    `"Noto Sans Mono 13"`,
+		"Font":                    fmt.Sprintf("%q", candidateFont(fontSize)),
 		"Theme":                   customThemeName,
 		"DarkTheme":               customThemeName,
 		"UseDarkTheme":            "False",
@@ -158,7 +158,7 @@ func Configure(home string) ([]string, error) {
 	return paths, nil
 }
 
-func SyncRuntimeConfig(ctx context.Context, runner *system.Runner) error {
+func SyncRuntimeConfig(ctx context.Context, runner *system.Runner, fontSize int) error {
 	if !fcitxRunning() {
 		return nil
 	}
@@ -169,7 +169,7 @@ func SyncRuntimeConfig(ctx context.Context, runner *system.Runner) error {
 	}{
 		{
 			path:    "fcitx://config/addon/classicui",
-			payload: classicUIRuntimeConfig(),
+			payload: classicUIRuntimeConfig(fontSize),
 		},
 		{
 			path:    "fcitx://config/addon/clipboard",
@@ -301,11 +301,11 @@ func ensureProfile(path string) error {
 	return nil
 }
 
-func ReloadAndActivate(ctx context.Context, runner *system.Runner) error {
+func ReloadAndActivate(ctx context.Context, runner *system.Runner, fontSize int) error {
 	if !fcitxRunning() {
 		return nil
 	}
-	if err := SyncRuntimeConfig(ctx, runner); err != nil {
+	if err := SyncRuntimeConfig(ctx, runner, fontSize); err != nil {
 		return err
 	}
 	if err := runner.Run(ctx, "fcitx5-remote", "-r"); err != nil {
@@ -343,8 +343,12 @@ func ensureCustomTheme(home string) error {
 	return nil
 }
 
-func classicUIRuntimeConfig() string {
-	return `<{'Vertical Candidate List': <'False'>, 'PerScreenDPI': <'False'>, 'Font': <'Noto Sans Mono 13'>, 'Theme': <'installer-dark'>, 'DarkTheme': <'installer-dark'>, 'UseDarkTheme': <'False'>, 'UseAccentColor': <'False'>}>`
+func classicUIRuntimeConfig(fontSize int) string {
+	return fmt.Sprintf(`<{'Vertical Candidate List': <'False'>, 'PerScreenDPI': <'False'>, 'Font': <'%s'>, 'Theme': <'installer-dark'>, 'DarkTheme': <'installer-dark'>, 'UseDarkTheme': <'False'>, 'UseAccentColor': <'False'>}>`, candidateFont(fontSize))
+}
+
+func candidateFont(fontSize int) string {
+	return fmt.Sprintf("Noto Sans Mono %d", fontSize)
 }
 
 func clipboardRuntimeConfig() string {

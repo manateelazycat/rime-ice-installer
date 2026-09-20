@@ -5,8 +5,15 @@ import (
 	"path/filepath"
 )
 
+const (
+	DefaultFontSize = 13
+	MinFontSize     = 8
+	MaxFontSize     = 48
+)
+
 type InstallConfig struct {
 	EnableWanxiang bool
+	FontSize       int
 	Yes            bool
 	DryRun         bool
 	Verbose        bool
@@ -14,15 +21,16 @@ type InstallConfig struct {
 }
 
 type DetectedEnv struct {
-	HomeDir             string
-	SessionType         string
-	Desktop             string
-	IsKDE               bool
-	AURHelper           string
-	DialogAvailable     bool
-	OctagramPluginPath  string
-	HasOctagramPlugin   bool
-	EnvironmentFilePath string
+	HomeDir              string
+	SessionType          string
+	Desktop              string
+	IsKDE                bool
+	AURHelper            string
+	DialogAvailable      bool
+	FingerprintAvailable bool
+	OctagramPluginPath   string
+	HasOctagramPlugin    bool
+	EnvironmentFilePath  string
 }
 
 type ReleaseInfo struct {
@@ -43,6 +51,7 @@ func DefaultInstallConfig() InstallConfig {
 	home, _ := os.UserHomeDir()
 	return InstallConfig{
 		EnableWanxiang: true,
+		FontSize:       DefaultFontSize,
 		WorkspaceDir:   filepath.Join(home, ".cache", "rime-ice-installer"),
 	}
 }

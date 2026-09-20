@@ -17,6 +17,7 @@ func main() {
 	flag.BoolVar(&cfg.DryRun, "dry-run", false, "只展示执行计划，不做实际修改")
 	flag.BoolVar(&cfg.Verbose, "verbose", false, "输出更详细的日志")
 	flag.BoolVar(&cfg.EnableWanxiang, "enable-wanxiang", cfg.EnableWanxiang, "下载并启用万象 LTS 语法模型")
+	flag.IntVar(&cfg.FontSize, "font-size", cfg.FontSize, "Fcitx5 候选框字体大小（8-48）")
 	flag.StringVar(&cfg.WorkspaceDir, "workspace-dir", cfg.WorkspaceDir, "工作目录，用于下载缓存和日志")
 	flag.Parse()
 

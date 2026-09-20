@@ -60,8 +60,9 @@ func TestMissingLibrariesFromLdd(t *testing.T) {
 }
 
 func TestClassicUIRuntimeConfigUsesInstallerDark(t *testing.T) {
-	payload := classicUIRuntimeConfig()
+	payload := classicUIRuntimeConfig(21)
 	for _, expected := range []string{
+		"'Font': <'Noto Sans Mono 21'>",
 		"'Theme': <'installer-dark'>",
 		"'DarkTheme': <'installer-dark'>",
 		"'UseAccentColor': <'False'>",
