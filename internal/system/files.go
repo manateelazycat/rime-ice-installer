@@ -152,6 +152,35 @@ func BackupDirWithSuffix(path, suffix string) (string, bool, error) {
 	return backupPath, true, nil
 }
 
+func BackupFileWithSuffix(path, suffix string) (string, bool, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return path + suffix, false, nil
+		}
+		return "", false, fmt.Errorf("读取文件状态失败: %w", err)
+	}
+	if !info.Mode().IsRegular() {
+		return "", false, fmt.Errorf("目标不是普通文件: %s", path)
+	}
+
+	backupPath := path + suffix
+	if _, err := os.Stat(backupPath); err == nil {
+		return backupPath, false, nil
+	} else if !os.IsNotExist(err) {
+		return "", false, fmt.Errorf("读取备份状态失败: %w", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", false, fmt.Errorf("读取待备份文件失败: %w", err)
+	}
+	if err := WriteFileAtomic(backupPath, data, info.Mode().Perm()); err != nil {
+		return "", false, fmt.Errorf("创建文件备份失败: %w", err)
+	}
+	return backupPath, true, nil
+}
+
 func CopyDir(src, dst string) error {
 	src = filepath.Clean(src)
 	dst = filepath.Clean(dst)

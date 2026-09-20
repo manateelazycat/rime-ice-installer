@@ -6,7 +6,7 @@ import (
 )
 
 const (
-	DefaultFontSize = 13
+	DefaultFontSize = 10
 	MinFontSize     = 8
 	MaxFontSize     = 48
 )

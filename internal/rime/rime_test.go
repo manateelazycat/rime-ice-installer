@@ -41,8 +41,8 @@ func TestMergeDefaultCustomConfig(t *testing.T) {
 	if got := patch["ascii_composer/good_old_caps_lock"]; got != true {
 		t.Fatalf("expected good_old_caps_lock=true, got %#v", got)
 	}
-	if got := patch["ascii_composer/switch_key/Shift_L"]; got != "inline_ascii" {
-		t.Fatalf("expected Shift_L=inline_ascii, got %#v", got)
+	if got := patch["ascii_composer/switch_key/Shift_L"]; got != "noop" {
+		t.Fatalf("expected Shift_L=noop, got %#v", got)
 	}
 	if got := patch["ascii_composer/switch_key/Shift_R"]; got != "noop" {
 		t.Fatalf("expected Shift_R=noop, got %#v", got)

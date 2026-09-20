@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"slices"
 	"strings"
 
@@ -32,6 +31,7 @@ const (
 	customThemeName   = "installer-dark"
 	systemThemeName   = "default-dark"
 	keyboardUS        = "keyboard-us"
+	defaultGroupName  = "Default"
 )
 
 func InstallPackages(ctx context.Context, runner *system.Runner, cfg config.InstallConfig, env config.DetectedEnv) error {
@@ -109,7 +109,14 @@ func Configure(home string, fontSize int) ([]string, error) {
 		filepath.Join(confDir, "clipboard.conf"),
 		filepath.Join(confDir, "quickphrase.conf"),
 		filepath.Join(confDir, "unicode.conf"),
+		filepath.Join(home, ".config", "fcitx5", "config"),
 		filepath.Join(home, ".config", "fcitx5", "profile"),
+	}
+
+	for _, path := range paths[4:] {
+		if _, _, err := system.BackupFileWithSuffix(path, "_bak"); err != nil {
+			return nil, err
+		}
 	}
 
 	if err := writeDefaultSection(paths[0], map[string]string{
@@ -151,7 +158,11 @@ func Configure(home string, fontSize int) ([]string, error) {
 		return nil, err
 	}
 
-	if err := ensureProfile(paths[4]); err != nil {
+	if err := ensureGlobalConfig(paths[4]); err != nil {
+		return nil, err
+	}
+
+	if err := ensureProfile(paths[5]); err != nil {
 		return nil, err
 	}
 
@@ -167,6 +178,10 @@ func SyncRuntimeConfig(ctx context.Context, runner *system.Runner, fontSize int)
 		path    string
 		payload string
 	}{
+		{
+			path:    "fcitx://config/global",
+			payload: globalRuntimeConfig(),
+		},
 		{
 			path:    "fcitx://config/addon/classicui",
 			payload: classicUIRuntimeConfig(fontSize),
@@ -201,7 +216,29 @@ func SyncRuntimeConfig(ctx context.Context, runner *system.Runner, fontSize int)
 		}
 	}
 
-	return runner.Run(ctx, "dbus-send", "--session", "--dest=org.fcitx.Fcitx5", "/controller", "org.fcitx.Fcitx.Controller1.Save")
+	if err := runner.Run(ctx, "dbus-send", "--session", "--dest=org.fcitx.Fcitx5", "/controller", "org.fcitx.Fcitx.Controller1.Save"); err != nil {
+		return err
+	}
+
+	output, err := runner.RunCapture(
+		ctx,
+		"gdbus",
+		"call",
+		"--session",
+		"--dest", "org.fcitx.Fcitx5",
+		"--object-path", "/controller",
+		"--method", "org.fcitx.Fcitx.Controller1.GetConfig",
+		"fcitx://config/global",
+	)
+	if err != nil {
+		return err
+	}
+	for _, expected := range []string{"Control+space", "Shift_L", "Shift_R", "ModifierOnlyKeyTimeout': <'-1'"} {
+		if !strings.Contains(output, expected) {
+			return fmt.Errorf("Fcitx5 运行时快捷键配置未生效，缺少 %s", expected)
+		}
+	}
+	return nil
 }
 
 func writeDefaultSection(path string, values map[string]string) error {
@@ -222,75 +259,69 @@ func writeDefaultSection(path string, values map[string]string) error {
 	return nil
 }
 
+func ensureGlobalConfig(path string) error {
+	cfg, err := ini.LooseLoad(path)
+	if err != nil {
+		return fmt.Errorf("加载 Fcitx5 全局配置失败: %w", err)
+	}
+
+	hotkey := cfg.Section("Hotkey")
+	hotkey.Key("ModifierOnlyKeyTimeout").SetValue("-1")
+	hotkey.Key("AltTriggerKeys").SetValue("")
+
+	triggerKeys := cfg.Section("Hotkey/TriggerKeys")
+	triggerKeys.Key("0").SetValue("Control+space")
+
+	// This installer promises that either Shift key switches directly between
+	// keyboard-us and Rime. Replace this list so stale entries cannot make the
+	// behavior depend on a previous Fcitx5 configuration.
+	cfg.DeleteSection("Hotkey/EnumerateForwardKeys")
+	enumerateKeys := cfg.Section("Hotkey/EnumerateForwardKeys")
+	enumerateKeys.Key("0").SetValue("Shift_L")
+	enumerateKeys.Key("1").SetValue("Shift_R")
+
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("创建 Fcitx5 配置目录失败: %w", err)
+	}
+	if err := cfg.SaveTo(path); err != nil {
+		return fmt.Errorf("保存 Fcitx5 全局配置失败: %w", err)
+	}
+	return nil
+}
+
 func ensureProfile(path string) error {
 	cfg, err := ini.LooseLoad(path)
 	if err != nil {
 		return fmt.Errorf("加载 profile 失败: %w", err)
 	}
 
-	group := cfg.Section("Groups/0")
-	group.Key("Name").SetValue("默认")
-	if group.Key("Default Layout").String() == "" {
-		group.Key("Default Layout").SetValue("us")
+	// Normalize the default group to exactly two entries. This makes both
+	// Ctrl+Space and the Shift enumeration shortcut deterministic while keeping
+	// any additional input-method groups untouched.
+	for _, section := range cfg.Sections() {
+		if strings.HasPrefix(section.Name(), "Groups/0/Items/") {
+			cfg.DeleteSection(section.Name())
+		}
 	}
+
+	group := cfg.Section("Groups/0")
+	group.Key("Name").SetValue(defaultGroupName)
+	group.Key("Default Layout").SetValue("us")
+	// The first item provides the inactive English keyboard. DefaultIM is the
+	// input method activated by Ctrl+Space, so it must be Rime rather than the
+	// keyboard item.
 	group.Key("DefaultIM").SetValue("rime")
 
-	itemPattern := regexp.MustCompile(`^Groups/0/Items/(\d+)$`)
-	maxIndex := -1
-	hasAnyItem := false
-	keyboardUSFound := false
-	rimeFound := false
+	keyboardSection := cfg.Section("Groups/0/Items/0")
+	keyboardSection.Key("Name").SetValue(keyboardUS)
+	keyboardSection.Key("Layout").SetValue("")
 
-	for _, section := range cfg.Sections() {
-		matches := itemPattern.FindStringSubmatch(section.Name())
-		if matches == nil {
-			continue
-		}
-		hasAnyItem = true
-		index := 0
-		fmt.Sscanf(matches[1], "%d", &index)
-		if index > maxIndex {
-			maxIndex = index
-		}
-		switch section.Key("Name").String() {
-		case keyboardUS:
-			keyboardUSFound = true
-			if section.Key("Layout").String() == "" {
-				section.Key("Layout").SetValue("")
-			}
-		case "rime":
-			rimeFound = true
-			if section.Key("Layout").String() == "" {
-				section.Key("Layout").SetValue("")
-			}
-		}
-	}
-
-	if !hasAnyItem {
-		keyboardSection := cfg.Section("Groups/0/Items/0")
-		keyboardSection.Key("Name").SetValue(keyboardUS)
-		keyboardSection.Key("Layout").SetValue("")
-		maxIndex = 0
-		keyboardUSFound = true
-	}
-
-	if !keyboardUSFound {
-		keyboardSection := cfg.Section(fmt.Sprintf("Groups/0/Items/%d", maxIndex+1))
-		keyboardSection.Key("Name").SetValue(keyboardUS)
-		keyboardSection.Key("Layout").SetValue("")
-		maxIndex++
-	}
-
-	if !rimeFound {
-		rimeSection := cfg.Section(fmt.Sprintf("Groups/0/Items/%d", maxIndex+1))
-		rimeSection.Key("Name").SetValue("rime")
-		rimeSection.Key("Layout").SetValue("")
-	}
+	rimeSection := cfg.Section("Groups/0/Items/1")
+	rimeSection.Key("Name").SetValue("rime")
+	rimeSection.Key("Layout").SetValue("")
 
 	order := cfg.Section("GroupOrder")
-	if order.Key("0").String() == "" {
-		order.Key("0").SetValue("默认")
-	}
+	order.Key("0").SetValue(defaultGroupName)
 
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf("创建 profile 目录失败: %w", err)
@@ -301,23 +332,14 @@ func ensureProfile(path string) error {
 	return nil
 }
 
-func ReloadAndActivate(ctx context.Context, runner *system.Runner, fontSize int) error {
+func Reload(ctx context.Context, runner *system.Runner) error {
 	if !fcitxRunning() {
 		return nil
-	}
-	if err := SyncRuntimeConfig(ctx, runner, fontSize); err != nil {
-		return err
 	}
 	if err := runner.Run(ctx, "fcitx5-remote", "-r"); err != nil {
 		return err
 	}
-	if err := runner.Run(ctx, "dbus-send", "--session", "--dest=org.fcitx.Fcitx5", "/controller", "org.fcitx.Fcitx.Controller1.ReloadConfig"); err != nil {
-		return err
-	}
-	if err := runner.Run(ctx, "fcitx5-remote", "-s", "rime"); err != nil {
-		return err
-	}
-	return nil
+	return runner.Run(ctx, "dbus-send", "--session", "--dest=org.fcitx.Fcitx5", "/controller", "org.fcitx.Fcitx.Controller1.ReloadConfig")
 }
 
 func Restart(ctx context.Context, runner *system.Runner) error {
@@ -343,12 +365,16 @@ func ensureCustomTheme(home string) error {
 	return nil
 }
 
-func classicUIRuntimeConfig(fontSize int) string {
-	return fmt.Sprintf(`<{'Vertical Candidate List': <'False'>, 'PerScreenDPI': <'False'>, 'Font': <'%s'>, 'Theme': <'installer-dark'>, 'DarkTheme': <'installer-dark'>, 'UseDarkTheme': <'False'>, 'UseAccentColor': <'False'>}>`, candidateFont(fontSize))
-}
-
 func candidateFont(fontSize int) string {
 	return fmt.Sprintf("Noto Sans Mono %d", fontSize)
+}
+
+func globalRuntimeConfig() string {
+	return `<{'Hotkey': <{'TriggerKeys': <{'0': <'Control+space'>}>, 'AltTriggerKeys': <@a{sv} {}>, 'EnumerateForwardKeys': <{'0': <'Shift_L'>, '1': <'Shift_R'>}>, 'ModifierOnlyKeyTimeout': <'-1'>}>}>`
+}
+
+func classicUIRuntimeConfig(fontSize int) string {
+	return fmt.Sprintf(`<{'Vertical Candidate List': <'False'>, 'PerScreenDPI': <'False'>, 'Font': <'%s'>, 'Theme': <'installer-dark'>, 'DarkTheme': <'installer-dark'>, 'UseDarkTheme': <'False'>, 'UseAccentColor': <'False'>}>`, candidateFont(fontSize))
 }
 
 func clipboardRuntimeConfig() string {

@@ -14,13 +14,14 @@
 - 安装过程中显示步骤进度条
 - 自动检测 KDE Wayland / 通用 X11
 - 自动写入 Fcitx5 `installer-dark` 黑色科幻主题和快捷键清理配置
-- 可在 TUI 中调节 Fcitx5 候选框字号（8–48，默认 13）
+- 可在 TUI 中调节 Fcitx5 候选框字号（8–48，默认 10）
 - 当系统的 sudo PAM 已启用指纹且当前用户已有录入时，可选择指纹验证，并在失败后回退密码
-- 自动确保 Fcitx5 `profile` 同时包含 `rime` 和 `keyboard-us`
+- 自动把 Fcitx5 默认输入法组配置为 `keyboard-us` 和 `rime`
+- 自动配置 `Ctrl + Space` 与左右 `Shift` 在两个输入法之间切换
 - 自动把 `~/.config/fcitx/rime` 和 `~/.local/share/fcitx5/rime` 备份为同级 `_bak`
 - 自动下载 `rime-ice` nightly 和 `wanxiang-lts-zh-hans.gram`
-- 自动写入 `default.custom.yaml`，启用 9 候选、`,` `.` 翻页，并把左 `Shift` 改成临时英文
-- 安装后自动编译并激活 `rime_ice` 方案
+- 自动写入 `default.custom.yaml`，启用 9 候选、`,` `.` 翻页，并关闭 Rime 内部的 Shift 处理
+- 安装后自动编译并重新加载 `rime_ice` 方案
 
 ## 构建与安装
 
@@ -87,7 +88,7 @@ rime-ice-installer
 - `--dry-run`
 - `--verbose`
 - `--enable-wanxiang`
-- `--font-size 13`
+- `--font-size 10`
 - `--workspace-dir`
 
 ## 实际安装内容
@@ -116,6 +117,7 @@ rime-ice-installer
 - `~/.config/fcitx5/conf/clipboard.conf`
 - `~/.config/fcitx5/conf/quickphrase.conf`
 - `~/.config/fcitx5/conf/unicode.conf`
+- `~/.config/fcitx5/config`
 - `~/.config/fcitx5/profile`
 
 其中会自动清空这些多余快捷键：
@@ -125,10 +127,18 @@ rime-ice-installer
 - `quickphrase.TriggerKey`
 - `unicode.TriggerKey`
 
-同时会确保 `~/.config/fcitx5/profile` 里存在：
+同时会把 `~/.config/fcitx5/profile` 的默认组统一为：
 
-- `rime`
 - `keyboard-us`
+- `rime`
+
+`~/.config/fcitx5/config` 会明确配置：
+
+- `Ctrl + Space` 切换输入法
+- 左右 `Shift` 在 `keyboard-us` 和 `rime` 之间切换
+- 清空会与上述行为冲突的 `AltTriggerKeys`
+
+首次修改前会把现有的 `config` 和 `profile` 分别备份为同级 `_bak` 文件。
 
 ## Rime 部署目录
 
@@ -148,4 +158,5 @@ rime-ice-installer
 
 - `menu/page_size: 9`
 - 追加 `,` / `.` 翻页
-- `ascii_composer/switch_key/Shift_L: inline_ascii`
+- `ascii_composer/switch_key/Shift_L: noop`
+- `ascii_composer/switch_key/Shift_R: noop`

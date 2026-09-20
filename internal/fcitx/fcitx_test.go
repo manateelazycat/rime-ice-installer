@@ -59,6 +59,21 @@ func TestMissingLibrariesFromLdd(t *testing.T) {
 	}
 }
 
+func TestGlobalRuntimeConfigContainsSwitchKeys(t *testing.T) {
+	payload := globalRuntimeConfig()
+	for _, expected := range []string{
+		"'Control+space'",
+		"'AltTriggerKeys': <@a{sv} {}>",
+		"'Shift_L'",
+		"'Shift_R'",
+		"'ModifierOnlyKeyTimeout': <'-1'>",
+	} {
+		if !strings.Contains(payload, expected) {
+			t.Fatalf("global runtime payload missing %s: %s", expected, payload)
+		}
+	}
+}
+
 func TestClassicUIRuntimeConfigUsesInstallerDark(t *testing.T) {
 	payload := classicUIRuntimeConfig(21)
 	for _, expected := range []string{
@@ -167,6 +182,9 @@ func TestEnsureProfileCreatesKeyboardUSAndRime(t *testing.T) {
 	}
 
 	group := cfg.Section("Groups/0")
+	if got := group.Key("Name").String(); got != defaultGroupName {
+		t.Fatalf("expected group name %s, got %q", defaultGroupName, got)
+	}
 	if got := group.Key("Default Layout").String(); got != "us" {
 		t.Fatalf("expected Default Layout us, got %q", got)
 	}
@@ -179,9 +197,12 @@ func TestEnsureProfileCreatesKeyboardUSAndRime(t *testing.T) {
 	if got := cfg.Section("Groups/0/Items/1").Key("Name").String(); got != "rime" {
 		t.Fatalf("expected second item rime, got %q", got)
 	}
+	if got := cfg.Section("GroupOrder").Key("0").String(); got != defaultGroupName {
+		t.Fatalf("expected group order %s, got %q", defaultGroupName, got)
+	}
 }
 
-func TestEnsureProfileAddsKeyboardUSWhenMissing(t *testing.T) {
+func TestEnsureProfileNormalizesExistingDefaultGroup(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "profile")
 	initial := strings.Join([]string{
@@ -196,6 +217,21 @@ func TestEnsureProfileAddsKeyboardUSWhenMissing(t *testing.T) {
 		"[Groups/0/Items/1]",
 		"Name=rime",
 		"Layout=",
+		"",
+		"[Groups/0/Items/2]",
+		"Name=keyboard-fr",
+		"Layout=",
+		"",
+		"[Groups/1]",
+		"Name=Other",
+		"",
+		"[Groups/1/Items/0]",
+		"Name=keyboard-de",
+		"Layout=",
+		"",
+		"[GroupOrder]",
+		"0=Default",
+		"1=Other",
 		"",
 	}, "\n")
 	if err := os.WriteFile(path, []byte(initial), 0o644); err != nil {
@@ -212,27 +248,98 @@ func TestEnsureProfileAddsKeyboardUSWhenMissing(t *testing.T) {
 	}
 
 	group := cfg.Section("Groups/0")
+	if got := group.Key("Name").String(); got != defaultGroupName {
+		t.Fatalf("expected group name %s, got %q", defaultGroupName, got)
+	}
 	if got := group.Key("Default Layout").String(); got != "us" {
 		t.Fatalf("expected Default Layout us, got %q", got)
 	}
+	if got := group.Key("DefaultIM").String(); got != "rime" {
+		t.Fatalf("expected DefaultIM rime, got %q", got)
+	}
+	if got := cfg.Section("Groups/0/Items/0").Key("Name").String(); got != keyboardUS {
+		t.Fatalf("expected first item %s, got %q", keyboardUS, got)
+	}
+	if got := cfg.Section("Groups/0/Items/1").Key("Name").String(); got != "rime" {
+		t.Fatalf("expected second item rime, got %q", got)
+	}
+	if cfg.HasSection("Groups/0/Items/2") {
+		t.Fatalf("expected default group to contain exactly two input methods")
+	}
+	if got := cfg.Section("GroupOrder").Key("0").String(); got != defaultGroupName {
+		t.Fatalf("expected group order %s, got %q", defaultGroupName, got)
+	}
+	if got := cfg.Section("Groups/1/Items/0").Key("Name").String(); got != "keyboard-de" {
+		t.Fatalf("expected other groups to be preserved, got %q", got)
+	}
+	if got := cfg.Section("GroupOrder").Key("1").String(); got != "Other" {
+		t.Fatalf("expected other group order to be preserved, got %q", got)
+	}
 
-	foundKeyboardUS := false
-	foundRime := false
-	for _, section := range cfg.Sections() {
-		if !strings.HasPrefix(section.Name(), "Groups/0/Items/") {
-			continue
-		}
-		switch section.Key("Name").String() {
-		case keyboardUS:
-			foundKeyboardUS = true
-		case "rime":
-			foundRime = true
-		}
+	first, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read normalized profile: %v", err)
 	}
-	if !foundKeyboardUS {
-		t.Fatalf("expected profile to include %s", keyboardUS)
+	if err := ensureProfile(path); err != nil {
+		t.Fatalf("second ensureProfile failed: %v", err)
 	}
-	if !foundRime {
-		t.Fatalf("expected profile to include rime")
+	second, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read profile after second run: %v", err)
+	}
+	if string(first) != string(second) {
+		t.Fatalf("expected profile update to be idempotent\nfirst:\n%s\nsecond:\n%s", first, second)
+	}
+}
+
+func TestEnsureGlobalConfigSetsSwitchKeysAndPreservesOtherSettings(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config")
+	initial := strings.Join([]string{
+		"[Hotkey]",
+		"AltTriggerKeys=Shift_L",
+		"ModifierOnlyKeyTimeout=250",
+		"",
+		"[Hotkey/EnumerateForwardKeys]",
+		"0=Control+Shift_L",
+		"2=Alt+space",
+		"",
+		"[Behavior]",
+		"ActiveByDefault=True",
+		"",
+	}, "\n")
+	if err := os.WriteFile(path, []byte(initial), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	if err := ensureGlobalConfig(path); err != nil {
+		t.Fatalf("ensureGlobalConfig failed: %v", err)
+	}
+
+	cfg, err := ini.Load(path)
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	if got := cfg.Section("Hotkey").Key("ModifierOnlyKeyTimeout").String(); got != "-1" {
+		t.Fatalf("expected no modifier timeout, got %q", got)
+	}
+	if got := cfg.Section("Hotkey").Key("AltTriggerKeys").String(); got != "" {
+		t.Fatalf("expected empty AltTriggerKeys, got %q", got)
+	}
+	if got := cfg.Section("Hotkey/TriggerKeys").Key("0").String(); got != "Control+space" {
+		t.Fatalf("expected Ctrl+Space trigger, got %q", got)
+	}
+	enumerate := cfg.Section("Hotkey/EnumerateForwardKeys")
+	if got := enumerate.Key("0").String(); got != "Shift_L" {
+		t.Fatalf("expected left Shift, got %q", got)
+	}
+	if got := enumerate.Key("1").String(); got != "Shift_R" {
+		t.Fatalf("expected right Shift, got %q", got)
+	}
+	if enumerate.HasKey("2") {
+		t.Fatalf("expected stale enumerate shortcuts to be removed")
+	}
+	if got := cfg.Section("Behavior").Key("ActiveByDefault").String(); got != "True" {
+		t.Fatalf("expected unrelated setting to be preserved, got %q", got)
 	}
 }

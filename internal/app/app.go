@@ -168,6 +168,11 @@ func Run(ctx context.Context, cfg config.InstallConfig) error {
 		if err != nil {
 			return err
 		}
+		// Load the new profile before saving any runtime settings. Otherwise a
+		// running Fcitx5 could write its old input-method list over the file.
+		if err := fcitx.Reload(ctx, runner); err != nil {
+			return err
+		}
 		return fcitx.SyncRuntimeConfig(ctx, runner, cfg.FontSize)
 	}); err != nil {
 		closeGauge(gauge)
@@ -207,12 +212,12 @@ func Run(ctx context.Context, cfg config.InstallConfig) error {
 		return fail(dialogUI, logger, err)
 	}
 
-	if err := step("编译并激活 Rime", func() error {
+	if err := step("编译并重新加载 Rime", func() error {
 		userDir := filepath.Join(detectedEnv.HomeDir, ".local", "share", "fcitx5", "rime")
 		if err := rime.Build(ctx, runner, userDir); err != nil {
 			return err
 		}
-		return fcitx.ReloadAndActivate(ctx, runner, cfg.FontSize)
+		return fcitx.Reload(ctx, runner)
 	}); err != nil {
 		closeGauge(gauge)
 		return fail(dialogUI, logger, err)
@@ -254,14 +259,14 @@ func buildSummary(cfg config.InstallConfig, env config.DetectedEnv) string {
 		"将要执行以下操作：",
 		"",
 		"1. 安装 Fcitx5、GTK/Qt 模块、配置工具、Rime、librime 和 opencc",
-		"2. 写入并同步 Fcitx5 黑色科幻主题、快捷键清理配置和 keyboard-us 英文键盘项",
+		"2. 写入 Fcitx5 黑色科幻主题，并配置 Ctrl+Space 与左右 Shift 切换",
 		fmt.Sprintf("   - 候选框字体：Noto Sans Mono %d", cfg.FontSize),
 		fmt.Sprintf("3. 写入 IM 环境变量文件：%s", env.EnvironmentFilePath),
-		"4. 下载 rime-ice nightly，并通过 default.custom.yaml 启用 9 候选、逗号句号翻页和左 Shift 临时英文",
+		"4. 下载 rime-ice nightly，并通过 default.custom.yaml 启用 9 候选、逗号句号翻页和关闭 Rime 内部 Shift 处理",
 		"5. 备份并覆盖以下目录：",
 		"   - ~/.config/fcitx/rime -> 同级 _bak",
 		"   - ~/.local/share/fcitx5/rime -> 同级 _bak",
-		"6. 编译并激活 rime_ice 方案",
+		"6. 编译并重新加载 rime_ice 方案",
 	}
 	if cfg.EnableWanxiang {
 		lines = append(lines, "7. 下载并启用 wanxiang-lts-zh-hans.gram")
@@ -317,9 +322,10 @@ func renderResult(startedAt time.Time, logPath, envFile string, configuredFiles 
 		"  - unicode TriggerKey",
 		"",
 		"已自动写入这些默认行为：",
-		"  - Fcitx5 profile 保留 rime，并确保 keyboard-us 可切换",
+		"  - Fcitx5 默认组固定为 keyboard-us 与 rime",
+		"  - Ctrl+Space 和左右 Shift 均可在两者之间切换",
 		"  - 雾凇 default.custom.yaml 启用 9 候选与 , . 翻页",
-		"  - 左 Shift 改为临时英文 inline_ascii，不再误触进入托盘 A 状态",
+		"  - Rime 内部左右 Shift 处理已关闭，避免快捷键冲突",
 		"",
 		"后续操作：",
 		"  - 重新登录或重启图形会话",

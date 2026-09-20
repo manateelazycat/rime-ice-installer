@@ -1,3 +1,4 @@
 build/
+rime-ice-installer
 *.out
 coverage.*

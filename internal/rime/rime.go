@@ -86,7 +86,7 @@ func MergeDefaultCustomConfig(path string) error {
 
 	patch["menu/page_size"] = 9
 	patch["ascii_composer/good_old_caps_lock"] = true
-	patch["ascii_composer/switch_key/Shift_L"] = "inline_ascii"
+	patch["ascii_composer/switch_key/Shift_L"] = "noop"
 	patch["ascii_composer/switch_key/Shift_R"] = "noop"
 	patch["ascii_composer/switch_key/Control_L"] = "noop"
 	patch["ascii_composer/switch_key/Control_R"] = "noop"
