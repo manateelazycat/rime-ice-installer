@@ -334,6 +334,9 @@ func renderResult(startedAt time.Time, logPath, envFile string, configuredFiles 
 	if detectedEnv.SessionType == "wayland" && detectedEnv.IsKDE {
 		lines = append(lines, "  - 在 KDE 设置 -> 虚拟键盘 中选择 Fcitx5")
 	}
+	if strings.Contains(detectedEnv.Desktop, "hyprland") {
+		lines = append(lines, "  - 若单按 Shift 无法切换，请检查 Hyprland 的 kb_options；Omarchy 默认的 shift:both_capslock_cancel 会把 Shift 松开映射成 Caps_Lock，修复方法见 README")
+	}
 	lines = append(lines, "  - 云插件与万象模型不要同时启用")
 
 	return strings.Join(lines, "\n")

@@ -200,6 +200,13 @@ func TestEnsureProfileCreatesKeyboardUSAndRime(t *testing.T) {
 	if got := cfg.Section("GroupOrder").Key("0").String(); got != defaultGroupName {
 		t.Fatalf("expected group order %s, got %q", defaultGroupName, got)
 	}
+	profile, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read profile: %v", err)
+	}
+	if strings.Index(string(profile), "[GroupOrder]") < strings.Index(string(profile), "[Groups/0/Items/1]") {
+		t.Fatalf("group order must follow the input method items: %s", profile)
+	}
 }
 
 func TestEnsureProfileNormalizesExistingDefaultGroup(t *testing.T) {

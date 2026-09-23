@@ -174,6 +174,18 @@ func SyncRuntimeConfig(ctx context.Context, runner *system.Runner, fontSize int)
 		return nil
 	}
 
+	// ReloadConfig does not reliably reload the input method group from profile.
+	// Apply it through the controller so the running instance can switch to Rime.
+	if err := runner.Run(
+		ctx, "gdbus", "call", "--session",
+		"--dest", "org.fcitx.Fcitx5",
+		"--object-path", "/controller",
+		"--method", "org.fcitx.Fcitx.Controller1.SetInputMethodGroupInfo",
+		defaultGroupName, "us", "[('keyboard-us', ''), ('rime', '')]",
+	); err != nil {
+		return fmt.Errorf("设置 Fcitx5 运行时输入法组失败: %w", err)
+	}
+
 	configs := []struct {
 		path    string
 		payload string
@@ -218,6 +230,19 @@ func SyncRuntimeConfig(ctx context.Context, runner *system.Runner, fontSize int)
 
 	if err := runner.Run(ctx, "dbus-send", "--session", "--dest=org.fcitx.Fcitx5", "/controller", "org.fcitx.Fcitx.Controller1.Save"); err != nil {
 		return err
+	}
+	group, err := runner.RunCapture(
+		ctx, "gdbus", "call", "--session",
+		"--dest", "org.fcitx.Fcitx5",
+		"--object-path", "/controller",
+		"--method", "org.fcitx.Fcitx.Controller1.FullInputMethodGroupInfo",
+		defaultGroupName,
+	)
+	if err != nil {
+		return err
+	}
+	if !strings.Contains(group, "('keyboard-us',") || !strings.Contains(group, "('rime',") {
+		return fmt.Errorf("Fcitx5 运行时输入法组未包含 keyboard-us 和 rime: %s", group)
 	}
 
 	output, err := runner.RunCapture(
@@ -320,7 +345,20 @@ func ensureProfile(path string) error {
 	rimeSection.Key("Name").SetValue("rime")
 	rimeSection.Key("Layout").SetValue("")
 
+	// Keep GroupOrder after the item sections, matching the profile Fcitx writes.
+	// A group order section between Groups/0 and its items can leave only the
+	// keyboard item in the live group when Fcitx starts.
+	previousOrder := make([][2]string, 0)
+	if cfg.HasSection("GroupOrder") {
+		for _, key := range cfg.Section("GroupOrder").Keys() {
+			previousOrder = append(previousOrder, [2]string{key.Name(), key.Value()})
+		}
+		cfg.DeleteSection("GroupOrder")
+	}
 	order := cfg.Section("GroupOrder")
+	for _, entry := range previousOrder {
+		order.Key(entry[0]).SetValue(entry[1])
+	}
 	order.Key("0").SetValue(defaultGroupName)
 
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

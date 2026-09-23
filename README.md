@@ -140,6 +140,14 @@ rime-ice-installer
 
 首次修改前会把现有的 `config` 和 `profile` 分别备份为同级 `_bak` 文件。
 
+Omarchy 的默认 Hyprland 键盘选项 `shift:both_capslock_cancel` 会把实体 Shift 的松开事件映射成 `Caps_Lock`，导致 Fcitx 的单按 Shift 快捷键无法触发。若使用 Omarchy，请在 `~/.config/hypr/input.lua` 中加入以下用户覆盖配置，然后运行 `hyprctl reload`：
+
+```lua
+hl.config({ input = { kb_options = "compose:caps" } })
+```
+
+这样会保留 Caps Lock 作为 Compose 键，但不再支持同时按左右 Shift 来控制 Caps Lock。
+
 ## Rime 部署目录
 
 - `~/.config/fcitx/rime`
