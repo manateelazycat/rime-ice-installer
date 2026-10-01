@@ -9,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"rime-ice-installer/internal/system"
 )
@@ -33,7 +32,7 @@ type Client struct {
 
 func NewClient(logger *system.Logger) *Client {
 	return &Client{
-		httpClient: &http.Client{Timeout: 10 * time.Minute},
+		httpClient: &http.Client{},
 		logger:     logger,
 	}
 }
