@@ -1,11 +1,13 @@
 package fcitx
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -258,7 +260,14 @@ func SyncRuntimeConfig(ctx context.Context, runner *system.Runner, fontSize int)
 	if err != nil {
 		return err
 	}
-	for _, expected := range []string{"Control+space", "Shift_L", "Shift_R", "ModifierOnlyKeyTimeout': <'-1'"} {
+	// Only the first struct of the reply carries the live values; the trailing
+	// part repeats the schema defaults, which contain the same shortcut names and
+	// therefore must not be used for verification.
+	for _, expected := range []string{
+		"'TriggerKeys': <{'0': <'Control+space'>}>",
+		"'EnumerateForwardKeys': <{'0': <'Shift_L'>, '1': <'Shift_R'>}>",
+		"'ModifierOnlyKeyTimeout': <'-1'>",
+	} {
 		if !strings.Contains(output, expected) {
 			return fmt.Errorf("Fcitx5 运行时快捷键配置未生效，缺少 %s", expected)
 		}
@@ -278,8 +287,66 @@ func writeDefaultSection(path string, values map[string]string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf("创建配置目录失败: %w", err)
 	}
-	if err := cfg.SaveTo(path); err != nil {
+	if err := saveFcitxIni(cfg, path); err != nil {
 		return fmt.Errorf("保存配置失败 %s: %w", path, err)
+	}
+	return nil
+}
+
+// numericKeyPattern matches an INI entry whose key is a list index.
+var numericKeyPattern = regexp.MustCompile(`^(\d+)\s*=\s*(.*)$`)
+
+// saveFcitxIni writes cfg in the layout fcitx5 is able to read back.
+//
+// gopkg.in/ini.v1 pretty prints every entry as "key = value". fcitx5 parses the
+// keys of list sections (for example "[Hotkey/TriggerKeys]" with key "0") as
+// integers and silently drops entries whose key is padded, so "0 = Control+space"
+// is loaded as an empty shortcut list and Ctrl+Space stops working after a
+// restart. Numeric keys therefore have to be written as "0=Control+space".
+func saveFcitxIni(cfg *ini.File, path string) error {
+	var buf bytes.Buffer
+	if _, err := cfg.WriteTo(&buf); err != nil {
+		return err
+	}
+	return os.WriteFile(path, []byte(compactNumericKeys(buf.String())), 0o644)
+}
+
+func compactNumericKeys(content string) string {
+	lines := strings.Split(content, "\n")
+	for index, line := range lines {
+		if match := numericKeyPattern.FindStringSubmatch(line); match != nil {
+			lines[index] = match[1] + "=" + match[2]
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+// paddedNumericKey returns the first list entry with blanks around "=" so it
+// can be reported instead of failing silently inside fcitx5.
+func paddedNumericKey(content string) (string, bool) {
+	for _, line := range strings.Split(content, "\n") {
+		match := numericKeyPattern.FindStringSubmatch(line)
+		if match == nil {
+			continue
+		}
+		if match[1]+"="+match[2] != line {
+			return line, true
+		}
+	}
+	return "", false
+}
+
+func verifyShortcutConfig(content string) error {
+	if line, padded := paddedNumericKey(content); padded {
+		return fmt.Errorf("Fcitx5 无法解析带空格填充的列表项 %q", line)
+	}
+	for _, expected := range []string{
+		"[Hotkey/TriggerKeys]\n0=Control+space",
+		"[Hotkey/EnumerateForwardKeys]\n0=Shift_L\n1=Shift_R",
+	} {
+		if !strings.Contains(content, expected) {
+			return fmt.Errorf("Fcitx5 快捷键配置缺少 %q", strings.ReplaceAll(expected, "\n", ", "))
+		}
 	}
 	return nil
 }
@@ -308,8 +375,19 @@ func ensureGlobalConfig(path string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf("创建 Fcitx5 配置目录失败: %w", err)
 	}
-	if err := cfg.SaveTo(path); err != nil {
+	if err := saveFcitxIni(cfg, path); err != nil {
 		return fmt.Errorf("保存 Fcitx5 全局配置失败: %w", err)
+	}
+
+	// The ini library round trips both "0 = value" and "0=value", while fcitx5
+	// only accepts the compact form. Verify the bytes on disk so a formatting
+	// regression fails here instead of after the next login.
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("读取 Fcitx5 全局配置失败: %w", err)
+	}
+	if err := verifyShortcutConfig(string(content)); err != nil {
+		return err
 	}
 	return nil
 }
@@ -364,7 +442,8 @@ func ensureProfile(path string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf("创建 profile 目录失败: %w", err)
 	}
-	if err := cfg.SaveTo(path); err != nil {
+	// GroupOrder uses numeric keys as well, which fcitx5 rejects in padded form.
+	if err := saveFcitxIni(cfg, path); err != nil {
 		return fmt.Errorf("保存 profile 失败: %w", err)
 	}
 	return nil

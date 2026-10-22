@@ -299,6 +299,123 @@ func TestEnsureProfileNormalizesExistingDefaultGroup(t *testing.T) {
 	}
 }
 
+func TestCompactNumericKeys(t *testing.T) {
+	input := strings.Join([]string{
+		"[Hotkey/TriggerKeys]",
+		"0 = Control+space",
+		"[GroupOrder]",
+		"0=默认",
+		"1 =其他",
+		"[Behavior]",
+		"ActiveByDefault = True",
+		"",
+	}, "\n")
+	expected := strings.Join([]string{
+		"[Hotkey/TriggerKeys]",
+		"0=Control+space",
+		"[GroupOrder]",
+		"0=默认",
+		"1=其他",
+		"[Behavior]",
+		"ActiveByDefault = True",
+		"",
+	}, "\n")
+	if got := compactNumericKeys(input); got != expected {
+		t.Fatalf("unexpected compacted config:\n%s\nwant:\n%s", got, expected)
+	}
+}
+
+func TestPaddedNumericKey(t *testing.T) {
+	for _, line := range []string{"0 = Control+space", "0 =Control+space", "0= Control+space"} {
+		if got, padded := paddedNumericKey("[Hotkey/TriggerKeys]\n" + line); !padded || got != line {
+			t.Fatalf("expected %q to be reported as padded, got %q padded=%v", line, got, padded)
+		}
+	}
+	if line, padded := paddedNumericKey("[Hotkey/TriggerKeys]\n0=Control+space"); padded {
+		t.Fatalf("expected compact entry to be accepted, got %q", line)
+	}
+}
+
+func TestEnsureGlobalConfigWritesParseableShortcutList(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config")
+	// A previous installer run stored the shortcut list with padded entries, and
+	// an untouched fcitx5 list section is present as well.
+	initial := strings.Join([]string{
+		"[Hotkey]",
+		"ModifierOnlyKeyTimeout = -1",
+		"",
+		"[Hotkey/TriggerKeys]",
+		"0 = Control+space",
+		"",
+		"[Hotkey/EnumerateGroupForwardKeys]",
+		"0 = Super+space",
+		"",
+	}, "\n")
+	if err := os.WriteFile(path, []byte(initial), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	if err := ensureGlobalConfig(path); err != nil {
+		t.Fatalf("ensureGlobalConfig failed: %v", err)
+	}
+
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	text := string(content)
+	for _, expected := range []string{
+		"[Hotkey/TriggerKeys]\n0=Control+space",
+		"[Hotkey/EnumerateForwardKeys]\n0=Shift_L\n1=Shift_R",
+		"0=Super+space",
+	} {
+		if !strings.Contains(text, expected) {
+			t.Fatalf("expected %q in written config:\n%s", expected, text)
+		}
+	}
+	if line, padded := paddedNumericKey(text); padded {
+		t.Fatalf("written config still contains %q:\n%s", line, text)
+	}
+	if strings.Contains(text, "0 = ") {
+		t.Fatalf("written config still pads numeric keys:\n%s", text)
+	}
+
+	// The rewrite must stay idempotent so repeated installer runs keep the file
+	// stable.
+	if err := ensureGlobalConfig(path); err != nil {
+		t.Fatalf("second ensureGlobalConfig failed: %v", err)
+	}
+	again, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read config after second run: %v", err)
+	}
+	if string(again) != text {
+		t.Fatalf("expected global config update to be idempotent\nfirst:\n%s\nsecond:\n%s", text, again)
+	}
+}
+
+func TestEnsureProfileWritesCompactGroupOrder(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "profile")
+	if err := os.WriteFile(path, []byte("[GroupOrder]\n0 = Default\n"), 0o644); err != nil {
+		t.Fatalf("write profile: %v", err)
+	}
+	if err := ensureProfile(path); err != nil {
+		t.Fatalf("ensureProfile failed: %v", err)
+	}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read profile: %v", err)
+	}
+	if line, padded := paddedNumericKey(string(content)); padded {
+		t.Fatalf("profile still contains padded entry %q:\n%s", line, content)
+	}
+	if !strings.Contains(string(content), "[GroupOrder]\n0="+defaultGroupName) {
+		t.Fatalf("expected compact GroupOrder in profile:\n%s", content)
+	}
+}
+
 func TestEnsureGlobalConfigSetsSwitchKeysAndPreservesOtherSettings(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config")
