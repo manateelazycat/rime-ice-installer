@@ -104,8 +104,9 @@ func Run(ctx context.Context, cfg config.InstallConfig) error {
 	var modelRelease *config.ReleaseInfo
 	var deployResult *config.DeploymentResult
 	var gauge *ui.Gauge
+	var rimeActivated bool
 
-	totalSteps := 7
+	totalSteps := 8
 	if cfg.EnableWanxiang {
 		totalSteps++
 	}
@@ -212,12 +213,21 @@ func Run(ctx context.Context, cfg config.InstallConfig) error {
 		return fail(dialogUI, logger, err)
 	}
 
-	if err := step("编译并重新加载 Rime", func() error {
+	if err := step("编译雾凇拼音", func() error {
 		userDir := filepath.Join(detectedEnv.HomeDir, ".local", "share", "fcitx5", "rime")
-		if err := rime.Build(ctx, runner, userDir); err != nil {
-			return err
+		return rime.Build(ctx, runner, userDir)
+	}); err != nil {
+		closeGauge(gauge)
+		return fail(dialogUI, logger, err)
+	}
+
+	if err := step("启用雾凇拼音", func() error {
+		var err error
+		rimeActivated, err = fcitx.ActivateRime(ctx, runner, rime.IceSchemaID)
+		if err == nil && !rimeActivated {
+			logger.Printf("当前没有图形输入法会话，下次启动 Fcitx5 时将默认启用雾凇拼音")
 		}
-		return fcitx.Reload(ctx, runner)
+		return err
 	}); err != nil {
 		closeGauge(gauge)
 		return fail(dialogUI, logger, err)
@@ -225,21 +235,11 @@ func Run(ctx context.Context, cfg config.InstallConfig) error {
 
 	closeGauge(gauge)
 
-	result := renderResult(startedAt, logger.Path(), envFile, configuredFiles, rimeWorkspace, modelRelease, deployResult, cfg, detectedEnv)
+	result := renderResult(startedAt, logger.Path(), envFile, configuredFiles, rimeWorkspace, modelRelease, deployResult, cfg, detectedEnv, rimeActivated)
 	if dialogUI != nil {
-		if err := dialogUI.MsgBox("安装完成", result); err != nil {
-			return err
-		}
-		if err := fcitx.Restart(ctx, runner); err != nil {
-			dialogUI.ShowError(fmt.Sprintf("Fcitx 自动重启失败: %v", err))
-			return err
-		}
-	} else {
-		fmt.Println(result)
-		if err := fcitx.Restart(ctx, runner); err != nil {
-			return err
-		}
+		return dialogUI.MsgBox("安装完成", result)
 	}
+	fmt.Println(result)
 	return nil
 }
 
@@ -266,7 +266,7 @@ func buildSummary(cfg config.InstallConfig, env config.DetectedEnv) string {
 		"5. 备份并覆盖以下目录：",
 		"   - ~/.config/fcitx/rime -> 同级 _bak",
 		"   - ~/.local/share/fcitx5/rime -> 同级 _bak",
-		"6. 编译并重新加载 rime_ice 方案",
+		"6. 编译雾凇拼音，并在当前图形会话中设为 Fcitx5 正在使用的输入法",
 	}
 	if cfg.EnableWanxiang {
 		lines = append(lines, "7. 下载并启用 wanxiang-lts-zh-hans.gram")
@@ -281,13 +281,20 @@ func buildSummary(cfg config.InstallConfig, env config.DetectedEnv) string {
 	return strings.Join(lines, "\n")
 }
 
-func renderResult(startedAt time.Time, logPath, envFile string, configuredFiles []string, rimeWorkspace *rime.PreparedWorkspace, modelRelease *config.ReleaseInfo, deployResult *config.DeploymentResult, cfg config.InstallConfig, detectedEnv config.DetectedEnv) string {
+func renderResult(startedAt time.Time, logPath, envFile string, configuredFiles []string, rimeWorkspace *rime.PreparedWorkspace, modelRelease *config.ReleaseInfo, deployResult *config.DeploymentResult, cfg config.InstallConfig, detectedEnv config.DetectedEnv, rimeActivated bool) string {
 	lines := []string{
 		fmt.Sprintf("安装完成，耗时 %s。", time.Since(startedAt).Round(time.Second)),
+	}
+	if rimeActivated {
+		lines = append(lines, "当前 Fcitx5 会话已默认启用雾凇拼音。")
+	} else {
+		lines = append(lines, "当前没有图形输入法会话，下次启动 Fcitx5 时将默认启用雾凇拼音。")
+	}
+	lines = append(lines,
 		"",
 		fmt.Sprintf("日志: %s", logPath),
 		fmt.Sprintf("环境变量文件: %s", envFile),
-	}
+	)
 
 	if len(configuredFiles) > 0 {
 		lines = append(lines, "Fcitx5 配置文件:")

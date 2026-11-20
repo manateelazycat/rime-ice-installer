@@ -21,7 +21,7 @@
 - 自动把 `~/.config/fcitx/rime` 和 `~/.local/share/fcitx5/rime` 备份为同级 `_bak`
 - 自动下载 `rime-ice` nightly 和 `wanxiang-lts-zh-hans.gram`
 - 自动写入 `default.custom.yaml`，启用 9 候选、`,` `.` 翻页，并关闭 Rime 内部的 Shift 处理
-- 安装后自动编译并重新加载 `rime_ice` 方案
+- 安装后自动编译 `rime_ice`，在当前图形会话中重启或启动 Fcitx5，并启用雾凇拼音中文模式
 
 ## 构建与安装
 
@@ -71,6 +71,8 @@ rime-ice-installer
 ```bash
 ./rime-ice-installer --yes --dry-run
 ```
+
+没有图形输入法会话时，安装器会写入默认配置，下次启动 Fcitx5 时自动启用雾凇拼音。可以继续用 `Ctrl + Space` 或左右 `Shift` 切换英文键盘。
 
 ## 指纹验证
 

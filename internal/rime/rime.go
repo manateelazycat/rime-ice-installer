@@ -15,6 +15,7 @@ import (
 )
 
 const (
+	IceSchemaID  = "rime_ice"
 	rimeIceOwner = "iDvel"
 	rimeIceRepo  = "rime-ice"
 	rimeIceTag   = "nightly"
@@ -161,7 +162,7 @@ func EnsureActiveSchema(path string) error {
 	if !ok || varSection == nil {
 		varSection = map[string]any{}
 	}
-	varSection["previously_selected_schema"] = "rime_ice"
+	varSection["previously_selected_schema"] = IceSchemaID
 	root["var"] = varSection
 
 	out, err := yaml.Marshal(root)

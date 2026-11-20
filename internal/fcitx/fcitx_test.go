@@ -2,6 +2,7 @@ package fcitx
 
 import (
 	"bytes"
+	"context"
 	"image/png"
 	"os"
 	"path/filepath"
@@ -67,10 +68,56 @@ func TestGlobalRuntimeConfigContainsSwitchKeys(t *testing.T) {
 		"'Shift_L'",
 		"'Shift_R'",
 		"'ModifierOnlyKeyTimeout': <'-1'>",
+		"'ActiveByDefault': <'True'>",
 	} {
 		if !strings.Contains(payload, expected) {
 			t.Fatalf("global runtime payload missing %s: %s", expected, payload)
 		}
+	}
+}
+
+func TestActivateRimeUsesNewInstanceAndChecksSchema(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	if err := os.WriteFile(filepath.Join(dir, "fcitx5-remote"), []byte("#!/bin/sh\n[ \"$1\" = --check ]\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	const gdbus = `#!/bin/sh
+case "$*" in
+  *GetNameOwner*)
+    if [ -f "$FCITX_TEST_RESTARTED" ]; then printf "(':1.2',)\n"; else printf "(':1.1',)\n"; fi
+    ;;
+  *"--dest :1.1 "*Controller1.Restart) : > "$FCITX_TEST_RESTARTED" ;;
+  *"--dest :1.2 "*Controller1.SwitchInputMethodGroup\ Default) printf '()\n' ;;
+  *"--dest :1.2 "*Controller1.SetCurrentIM\ rime) printf '()\n' ;;
+  *"--dest :1.2 "*Controller1.CurrentInputMethod) printf "('rime',)\n" ;;
+  *"--dest :1.2 "*Rime1.ListAllSchemas) printf "(['double_pinyin', 'rime_ice'],)\n" ;;
+  *"--dest :1.2 "*Rime1.SetSchema\ rime_ice) printf '()\n' ;;
+  *"--dest :1.2 "*Rime1.SetAsciiMode\ false) printf '()\n' ;;
+  *"--dest :1.2 "*Rime1.GetCurrentSchema) printf "('%s',)\n" "$FCITX_TEST_SCHEMA" ;;
+  *"--dest :1.2 "*Rime1.IsAsciiMode) printf '(false,)\n' ;;
+  *"--dest :1.2 "*Controller1.Save) printf '()\n' ;;
+  *) exit 1 ;;
+esac
+`
+	if err := os.WriteFile(filepath.Join(dir, "gdbus"), []byte(gdbus), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, schema := range []string{"rime_ice", "double_pinyin"} {
+		t.Run(schema, func(t *testing.T) {
+			t.Setenv("FCITX_TEST_RESTARTED", filepath.Join(t.TempDir(), "restarted"))
+			t.Setenv("FCITX_TEST_SCHEMA", schema)
+			activated, err := ActivateRime(context.Background(), system.NewRunner(false, nil), "rime_ice")
+			if schema == "rime_ice" {
+				if err != nil || !activated {
+					t.Fatalf("expected verified activation, got %v, %v", activated, err)
+				}
+			} else if activated || err == nil || !strings.Contains(err.Error(), "double_pinyin") {
+				t.Fatalf("expected old schema to fail activation, got %v, %v", activated, err)
+			}
+		})
 	}
 }
 
@@ -207,6 +254,9 @@ func TestEnsureProfileCreatesKeyboardUSAndRime(t *testing.T) {
 	if strings.Index(string(profile), "[GroupOrder]") < strings.Index(string(profile), "[Groups/0/Items/1]") {
 		t.Fatalf("group order must follow the input method items: %s", profile)
 	}
+	if !strings.Contains(string(profile), "DefaultIM=rime\n") {
+		t.Fatalf("Fcitx requires an unpadded key in the written profile:\n%s", profile)
+	}
 }
 
 func TestEnsureProfileNormalizesExistingDefaultGroup(t *testing.T) {
@@ -237,8 +287,8 @@ func TestEnsureProfileNormalizesExistingDefaultGroup(t *testing.T) {
 		"Layout=",
 		"",
 		"[GroupOrder]",
-		"0=Default",
-		"1=Other",
+		"0=Other",
+		"1=Default",
 		"",
 	}, "\n")
 	if err := os.WriteFile(path, []byte(initial), 0o644); err != nil {
@@ -312,7 +362,8 @@ func TestEnsureGlobalConfigSetsSwitchKeysAndPreservesOtherSettings(t *testing.T)
 		"2=Alt+space",
 		"",
 		"[Behavior]",
-		"ActiveByDefault=True",
+		"ActiveByDefault=False",
+		"ShareInputState=Program",
 		"",
 	}, "\n")
 	if err := os.WriteFile(path, []byte(initial), 0o644); err != nil {
@@ -347,6 +398,9 @@ func TestEnsureGlobalConfigSetsSwitchKeysAndPreservesOtherSettings(t *testing.T)
 		t.Fatalf("expected stale enumerate shortcuts to be removed")
 	}
 	if got := cfg.Section("Behavior").Key("ActiveByDefault").String(); got != "True" {
+		t.Fatalf("expected Fcitx5 to activate Rime by default, got %q", got)
+	}
+	if got := cfg.Section("Behavior").Key("ShareInputState").String(); got != "Program" {
 		t.Fatalf("expected unrelated setting to be preserved, got %q", got)
 	}
 }
